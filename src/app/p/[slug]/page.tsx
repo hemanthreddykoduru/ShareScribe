@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { Download, Copy, QrCode, Share2, Eye, Calendar, FileText, Check, Lock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -89,7 +90,7 @@ export default function PublicPdfPage() {
             <FileText size={48} style={{ color: '#93c5fd' }} />
             <h1 style={{ fontSize: 24, fontWeight: 800 }}>PDF not found</h1>
             <p style={{ color: 'var(--text-muted)' }}>This link may have expired or been removed.</p>
-            <a href="/" style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>← Back to ShareScribe</a>
+            <Link href="/" style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>← Back to ShareScribe</Link>
         </div>
     );
 
@@ -194,9 +195,9 @@ export default function PublicPdfPage() {
 
                     {/* Powered by */}
                     <div style={{ textAlign: 'center', paddingTop: 4 }}>
-                        <a href="/" style={{ fontSize: 13, color: '#93c5fd', textDecoration: 'none' }}>
+                        <Link href="/" style={{ fontSize: 13, color: '#93c5fd', textDecoration: 'none' }}>
                             Powered by <strong style={{ color: '#2563eb' }}>ShareScribe</strong>
-                        </a>
+                        </Link>
                     </div>
                 </div>
             </div>

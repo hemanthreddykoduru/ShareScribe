@@ -19,6 +19,8 @@ const plans = [
         subtitle: 'Perfect for individuals getting started',
         cta: 'Get started free',
         featured: false,
+        badge: null,
+        planType: null,
         features: [
             { text: '5 PDF uploads', included: true },
             { text: '100 MB storage', included: true },
@@ -26,7 +28,6 @@ const plans = [
             { text: 'Shareable links', included: true },
             { text: 'Basic analytics (7 days)', included: true },
             { text: 'Password protection', included: false },
-            { text: 'Expiry links', included: false },
             { text: 'Custom QR styling', included: false },
             { text: 'Advanced analytics', included: false },
             { text: 'Priority support', included: false },
@@ -36,9 +37,11 @@ const plans = [
         name: 'Pro',
         price: '₹100',
         period: '/month',
-        subtitle: 'For professionals and growing teams',
+        subtitle: 'Full power, billed monthly',
         cta: 'Upgrade to Pro',
-        featured: true,
+        featured: false,
+        badge: null,
+        planType: 'monthly',
         features: [
             { text: 'Unlimited PDF uploads', included: true },
             { text: '10 GB storage', included: true },
@@ -48,7 +51,27 @@ const plans = [
             { text: 'Password protection', included: true },
             { text: 'Expiry links', included: true },
             { text: 'Logo in QR code', included: true },
-            { text: 'Folder organization', included: true },
+            { text: 'Priority support', included: true },
+        ],
+    },
+    {
+        name: 'Pro Yearly',
+        price: '₹700',
+        period: '/year',
+        subtitle: 'Best value — save ₹500 vs monthly',
+        cta: 'Get Pro Yearly',
+        featured: true,
+        badge: '🏆 Best Value',
+        planType: 'yearly',
+        features: [
+            { text: 'Unlimited PDF uploads', included: true },
+            { text: '10 GB storage', included: true },
+            { text: 'Custom QR styling', included: true },
+            { text: 'Shareable links', included: true },
+            { text: 'Advanced analytics (90 days)', included: true },
+            { text: 'Password protection', included: true },
+            { text: 'Expiry links', included: true },
+            { text: 'Logo in QR code', included: true },
             { text: 'Priority support', included: true },
         ],
     },
@@ -57,24 +80,22 @@ const plans = [
 const faqs = [
     { q: 'Can I switch plans at any time?', a: 'Yes, you can upgrade or downgrade your plan at any time.' },
     { q: 'What payment methods do you accept?', a: 'We accept all major credit/debit cards, UPI, Net Banking, and wallets via Razorpay.' },
-    { q: 'Is there a free trial for Pro?', a: 'Start with the free plan — upgrade when you need more power.' },
+    { q: 'How much do I save with the yearly plan?', a: 'The yearly plan costs ₹700 vs ₹1,200 (₹100 × 12) — you save ₹500 per year.' },
     { q: 'What happens to my PDFs if I downgrade?', a: 'Your PDFs stay accessible, but new uploads are limited to the free plan quota.' },
 ];
 
 export default function PricingPage() {
     const [user, setUser] = useState<User | null>(null);
     const [isPro, setIsPro] = useState(false);
-    const [paying, setPaying] = useState(false);
+    const [paying, setPaying] = useState<string | null>(null); // planType being paid
     const [paymentDone, setPaymentDone] = useState(false);
 
     useEffect(() => {
-        // Load Razorpay script
         const script = document.createElement('script');
         script.src = 'https://checkout.razorpay.com/v1/checkout.js';
         script.async = true;
         document.body.appendChild(script);
 
-        // Get user + pro status
         supabase.auth.getUser().then(async ({ data: { user: u } }) => {
             setUser(u);
             if (u) {
@@ -85,13 +106,17 @@ export default function PricingPage() {
         return () => { document.body.removeChild(script); };
     }, []);
 
-    const handleUpgrade = async () => {
+    const handleUpgrade = async (planType: string, label: string) => {
         if (!user) { window.location.href = '/login?redirect=/pricing'; return; }
-        if (isPro) return;
+        // Monthly re-purchase blocked by API; yearly always proceeds
 
-        setPaying(true);
+        setPaying(planType);
         try {
-            const res = await fetch('/api/razorpay/create-order', { method: 'POST' });
+            const res = await fetch('/api/razorpay/create-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planType }),
+            });
             const order = await res.json();
             if (!res.ok) throw new Error(order.error);
 
@@ -100,36 +125,26 @@ export default function PricingPage() {
                 amount: order.amount,
                 currency: order.currency,
                 name: 'ShareScribe',
-                description: 'Pro Plan — ₹100/month',
+                description: `Pro Plan — ${label}`,
                 order_id: order.orderId,
-                prefill: {
-                    name: user.user_metadata?.full_name ?? '',
-                    email: user.email ?? '',
-                },
+                prefill: { name: user.user_metadata?.full_name ?? '', email: user.email ?? '' },
                 theme: { color: '#2563eb' },
-                handler: async (response: {
-                    razorpay_order_id: string;
-                    razorpay_payment_id: string;
-                    razorpay_signature: string;
-                }) => {
+                handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
                     const verify = await fetch('/api/razorpay/verify', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(response),
                     });
-                    if (verify.ok) {
-                        setIsPro(true);
-                        setPaymentDone(true);
-                    }
+                    if (verify.ok) { setIsPro(true); setPaymentDone(true); }
                 },
-                modal: { ondismiss: () => setPaying(false) },
+                modal: { ondismiss: () => setPaying(null) },
             };
 
             const rzp = new window.Razorpay(options);
-            rzp.on('payment.failed', () => setPaying(false));
+            rzp.on('payment.failed', () => setPaying(null));
             rzp.open();
         } catch {
-            setPaying(false);
+            setPaying(null);
         }
     };
 
@@ -152,7 +167,7 @@ export default function PricingPage() {
         <div style={{ paddingTop: 88, minHeight: '100vh' }}>
             <div className="page-wrap" style={{ paddingBottom: 80 }}>
                 {/* Header */}
-                <div style={{ textAlign: 'center', marginBottom: 64, paddingTop: 40 }}>
+                <div style={{ textAlign: 'center', marginBottom: 56, paddingTop: 40 }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#dbeafe', border: '1px solid #bfdbfe', color: '#2563eb', borderRadius: 99, padding: '5px 14px', fontSize: 12, fontWeight: 600, marginBottom: 24 }}>
                         <Zap size={11} /> Simple, transparent pricing
                     </span>
@@ -164,62 +179,65 @@ export default function PricingPage() {
                     </p>
                 </div>
 
-                {/* Plans */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 800, margin: '0 auto 80px', alignItems: 'start' }}>
+                {/* Plans — 3 columns */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, maxWidth: 980, margin: '0 auto 80px', alignItems: 'start' }}>
                     {plans.map(plan => (
                         <div key={plan.name} style={{ position: 'relative' }}>
-                            {plan.featured && (
+                            {plan.badge && (
                                 <div style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', padding: '4px 16px', borderRadius: 99, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', zIndex: 2 }}>
-                                    ✨ Most Popular
+                                    {plan.badge}
                                 </div>
                             )}
                             <div className="glass-card" style={{
-                                padding: 32,
+                                padding: 28,
                                 border: plan.featured ? '2px solid #2563eb' : '1px solid var(--border)',
                                 background: plan.featured ? '#f0f6ff' : 'var(--bg-card)',
-                                boxShadow: plan.featured ? '0 20px 60px rgba(37,99,235,0.15)' : 'none',
+                                boxShadow: plan.featured ? '0 20px 60px rgba(37,99,235,0.12)' : 'none',
                             }}>
-                                <div style={{ marginBottom: 24 }}>
-                                    <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>{plan.name}</h2>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>{plan.subtitle}</p>
+                                <div style={{ marginBottom: 20 }}>
+                                    <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{plan.name}</h2>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 14 }}>{plan.subtitle}</p>
                                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                                        <span style={{ fontSize: '2.8rem', fontWeight: 900, letterSpacing: '-2px', color: plan.featured ? '#2563eb' : 'var(--text)' }}>{plan.price}</span>
-                                        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>{plan.period}</span>
+                                        <span style={{ fontSize: '2.4rem', fontWeight: 900, letterSpacing: '-2px', color: plan.featured ? '#2563eb' : 'var(--text)' }}>{plan.price}</span>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{plan.period}</span>
                                     </div>
+                                    {plan.planType === 'yearly' && (
+                                        <p style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>Save ₹500 vs monthly</p>
+                                    )}
                                 </div>
 
-                                {plan.featured ? (
-                                    isPro ? (
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px', borderRadius: 10, background: '#dbeafe', color: '#2563eb', fontWeight: 700, fontSize: 15, marginBottom: 28 }}>
-                                            <Check size={16} /> You are on Pro ⚡
+                                {plan.planType ? (
+                                    isPro && plan.planType === 'monthly' ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px', borderRadius: 10, background: '#dbeafe', color: '#2563eb', fontWeight: 700, fontSize: 14, marginBottom: 24 }}>
+                                            <Check size={14} /> You are on Pro ⚡
                                         </div>
                                     ) : (
-                                        <button onClick={handleUpgrade} disabled={paying} style={{
+                                        <button onClick={() => handleUpgrade(plan.planType!, `${plan.price}${plan.period}`)} disabled={paying !== null} style={{
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                            padding: '13px', borderRadius: 10, fontWeight: 700, fontSize: 15,
-                                            background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white',
-                                            border: 'none', cursor: paying ? 'not-allowed' : 'pointer',
-                                            width: '100%', marginBottom: 28, opacity: paying ? 0.8 : 1,
-                                            boxShadow: '0 4px 16px rgba(37,99,235,0.3)',
+                                            padding: '12px', borderRadius: 10, fontWeight: 700, fontSize: 14,
+                                            background: plan.featured ? 'linear-gradient(135deg, #1d4ed8, #2563eb)' : 'linear-gradient(135deg, #2563eb, #3b82f6)',
+                                            color: 'white', border: 'none', cursor: paying ? 'not-allowed' : 'pointer',
+                                            width: '100%', marginBottom: 24, opacity: paying ? 0.7 : 1,
+                                            boxShadow: plan.featured ? '0 4px 16px rgba(37,99,235,0.3)' : 'none',
                                         }}>
-                                            {paying ? <><Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> Processing…</> : <>{plan.cta} <ArrowRight size={15} /></>}
+                                            {paying === plan.planType ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Processing…</> : <>{plan.cta} <ArrowRight size={14} /></>}
                                         </button>
                                     )
                                 ) : (
                                     <a href={user ? '/upload' : '/signup'} style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                        padding: '13px', borderRadius: 10, textDecoration: 'none', fontWeight: 700, fontSize: 15,
-                                        border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', marginBottom: 28,
+                                        padding: '12px', borderRadius: 10, textDecoration: 'none', fontWeight: 700, fontSize: 14,
+                                        border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', marginBottom: 24,
                                     }}>
-                                        {plan.cta} <ArrowRight size={15} />
+                                        {plan.cta} <ArrowRight size={14} />
                                     </a>
                                 )}
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                     {plan.features.map(f => (
-                                        <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            {f.included ? <Check size={15} style={{ color: '#22c55e', flexShrink: 0 }} /> : <X size={15} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />}
-                                            <span style={{ fontSize: 14, color: f.included ? 'var(--text)' : 'var(--text-faint)' }}>{f.text}</span>
+                                        <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            {f.included ? <Check size={14} style={{ color: '#22c55e', flexShrink: 0 }} /> : <X size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />}
+                                            <span style={{ fontSize: 13, color: f.included ? 'var(--text)' : 'var(--text-faint)' }}>{f.text}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -246,7 +264,7 @@ export default function PricingPage() {
                     </div>
                 </div>
             </div>
-            <style>{`@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:640px){.plans-grid{grid-template-columns:1fr!important;}}`}</style>
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:760px){.plans-grid{grid-template-columns:1fr!important;}}`}</style>
         </div>
     );
 }

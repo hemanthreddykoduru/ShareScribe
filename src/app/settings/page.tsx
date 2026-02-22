@@ -16,6 +16,7 @@ export default function SettingsPage() {
     const router = useRouter();
     const [tab, setTab] = useState('profile');
     const [user, setUser] = useState<SupaUser | null>(null);
+    const [isPro, setIsPro] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [showPw, setShowPw] = useState(false);
@@ -28,13 +29,15 @@ export default function SettingsPage() {
     });
 
     useEffect(() => {
-        supabase.auth.getUser().then(({ data: { user: u } }) => {
+        supabase.auth.getUser().then(async ({ data: { user: u } }) => {
             if (!u) { router.push('/login'); return; }
             setUser(u);
             setProfile({
                 full_name: u.user_metadata?.full_name ?? '',
                 email: u.email ?? '',
             });
+            const { data: profile } = await supabase.from('profiles').select('is_pro').eq('id', u.id).single();
+            setIsPro(profile?.is_pro ?? false);
         });
     }, [router]);
 
@@ -118,7 +121,7 @@ export default function SettingsPage() {
                                     <div>
                                         <p style={{ fontWeight: 700, fontSize: 15 }}>{profile.full_name || 'No name set'}</p>
                                         <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{user.email}</p>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#dbeafe', padding: '2px 8px', borderRadius: 99, marginTop: 4, display: 'inline-block' }}>Free Plan</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: isPro ? '#854d0e' : '#2563eb', background: isPro ? '#fef3c7' : '#dbeafe', padding: '2px 8px', borderRadius: 99, marginTop: 4, display: 'inline-block' }}>{isPro ? '⚡ Pro' : 'Free Plan'}</span>
                                     </div>
                                 </div>
 

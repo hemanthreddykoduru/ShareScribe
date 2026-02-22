@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
-import { Download, Share2, Palette, Image, Type } from 'lucide-react';
+import { Download, Share2, Palette, Image as ImageIcon, Type, Save, Check } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { QRCodeCanvas } from 'qrcode.react';
 
 type QrType = 'pdf_url' | 'custom_url' | 'text' | 'vcard';
@@ -12,18 +13,30 @@ const QR_TYPES: { value: QrType; label: string; icon: string; placeholder: strin
     { value: 'vcard', label: 'Contact Card', icon: '👤', placeholder: 'Name, Phone, Email…' },
 ];
 
-const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#000000'];
+const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#000000'];
 
 export default function QrGeneratorPage() {
     const [qrType, setQrType] = useState<QrType>('pdf_url');
     const [data, setData] = useState('');
     const [fgColor, setFgColor] = useState('#2563eb');
     const [bgColor, setBgColor] = useState('#ffffff');
+    const [logo, setLogo] = useState<string | null>(null);
+    const [name, setName] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [size, setSize] = useState(200);
     const qrContainerRef = useRef<HTMLDivElement>(null);
 
     const currentType = QR_TYPES.find(t => t.value === qrType)!;
     const hasData = data.trim().length > 0;
+
+    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => setLogo(e.target?.result as string);
+        reader.readAsDataURL(file);
+    };
 
     const downloadQR = () => {
         const canvas = qrContainerRef.current?.querySelector('canvas') as HTMLCanvasElement;
@@ -83,6 +96,19 @@ export default function QrGeneratorPage() {
                             <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <Type size={15} /> Content
                             </h3>
+
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>QR Code Name (optional)</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g., My Portfolio Link"
+                                    value={name}
+                                    onChange={e => setName(e.target.value)}
+                                    className="input-styled"
+                                    style={{ padding: '12px 16px', background: 'var(--bg)' }}
+                                />
+                            </div>
+
                             {qrType === 'vcard' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                     {['Full Name', 'Phone', 'Email', 'Company', 'Website'].map(field => (
@@ -139,15 +165,26 @@ export default function QrGeneratorPage() {
                                 </div>
                             </div>
 
-                            {/* Logo upload placeholder */}
+                            {/* Logo upload */}
                             <div>
                                 <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <Image size={13} /> Logo in center (optional — Pro)
+                                    <ImageIcon size={13} /> Logo in center (optional — Pro)
                                 </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', border: '1px dashed var(--border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14 }}>
-                                    <Image size={16} /> Click to upload logo image
-                                    <input type="file" accept="image/*" hidden />
-                                </label>
+                                {logo ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg-card-hover)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={logo} alt="Logo preview" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'contain' }} />
+                                            <span style={{ fontSize: 13, fontWeight: 600 }}>Custom Logo Attached</span>
+                                        </div>
+                                        <button onClick={() => setLogo(null)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Remove</button>
+                                    </div>
+                                ) : (
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', border: '1px dashed var(--border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14 }}>
+                                        <ImageIcon size={16} /> Click to upload logo image
+                                        <input type="file" accept="image/*" onChange={handleLogoUpload} hidden />
+                                    </label>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -176,14 +213,49 @@ export default function QrGeneratorPage() {
                                         fgColor={fgColor}
                                         bgColor={bgColor}
                                         level="H"
+                                        imageSettings={logo ? { src: logo, excavate: true, height: 48, width: 48 } : undefined}
                                         includeMargin={false}
                                     />
                                 ) : (
-                                    <div style={{ opacity: 0.3, textAlign: 'center', width: size, height: size, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                        <div style={{ fontSize: 36, marginBottom: 8 }}>📱</div>
-                                        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Enter content to preview</p>
+                                    <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontSize: 14 }}>
+                                        Enter data to preview
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                                <button onClick={downloadQR} disabled={!hasData} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: hasData ? 'pointer' : 'not-allowed', opacity: hasData ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                    <Download size={16} /> Download
+                                </button>
+                                <button onClick={async () => {
+                                    if (!hasData) return;
+                                    setSaving(true);
+                                    const { data: { user } } = await supabase.auth.getUser();
+                                    if (!user) { window.location.href = '/login?redirect=/qr-generator'; return; }
+
+                                    await supabase.from('qr_codes').insert({
+                                        user_id: user.id,
+                                        type: qrType,
+                                        data: data,
+                                        config: { fgColor, bgColor, size, hasLogo: !!logo, name }
+                                    });
+                                    setSaving(false);
+                                    setSaved(true);
+                                    setTimeout(() => setSaved(false), 3000);
+                                }} disabled={!hasData || saving} style={{ flex: 1, padding: '12px', background: saved ? '#10b981' : 'var(--bg)', color: saved ? 'white' : 'var(--text)', border: saved ? 'none' : '1px solid var(--border)', borderRadius: 10, cursor: hasData ? 'pointer' : 'not-allowed', opacity: hasData ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }}>
+                                    {saved ? <><Check size={16} /> Saved!</> : saving ? <><div style={{ width: 16, height: 16, border: '2px solid currentColor', borderRightColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> Saving...</> : <><Save size={16} /> Save</>}
+                                </button>
+                                <button onClick={() => {
+                                    const canvas = qrContainerRef.current?.querySelector('canvas');
+                                    if (canvas) {
+                                        canvas.toBlob(blob => {
+                                            if (blob) navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                                        });
+                                    }
+                                }} disabled={!hasData} title="Copy Image" style={{ padding: '12px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 10, cursor: hasData ? 'pointer' : 'not-allowed', opacity: hasData ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Share2 size={16} />
+                                </button>
                             </div>
 
                             {/* Size slider */}
@@ -195,24 +267,6 @@ export default function QrGeneratorPage() {
                                 <input type="range" min={120} max={320} value={size} onChange={e => setSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#2563eb' }} />
                             </div>
 
-                            {/* Download buttons */}
-                            <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
-                                <button onClick={downloadQR} disabled={!hasData} className="btn-primary" style={{
-                                    padding: '12px', borderRadius: 9, border: 'none', cursor: hasData ? 'pointer' : 'not-allowed',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 600,
-                                    opacity: hasData ? 1 : 0.5,
-                                }}>
-                                    <Download size={15} /> Download PNG
-                                </button>
-                                <button onClick={shareQR} disabled={!hasData} style={{
-                                    padding: '12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)',
-                                    color: 'var(--text-muted)', cursor: hasData ? 'pointer' : 'not-allowed',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14,
-                                    opacity: hasData ? 1 : 0.5,
-                                }}>
-                                    <Share2 size={15} /> Share QR
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>

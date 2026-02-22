@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { FileText, QrCode, Eye, HardDrive, Upload, BarChart2, Plus, TrendingUp } from 'lucide-react';
+import { FileText, QrCode, Eye, HardDrive, Upload, BarChart2, Plus, TrendingUp, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -32,7 +32,9 @@ function formatBytes(bytes: number) {
 export default function DashboardPage() {
     const [user, setUser] = useState<User | null>(null);
     const [pdfs, setPdfs] = useState<Pdf[]>([]);
+    const [qrs, setQrs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isPro, setIsPro] = useState(false);
     const [stats, setStats] = useState({ totalPdfs: 0, totalViews: 0, storageUsed: 0 });
 
     const hour = new Date().getHours();
@@ -45,15 +47,30 @@ export default function DashboardPage() {
             setUser(u);
             if (!u) { setLoading(false); return; }
 
-            const { data: pdfData } = await supabase
-                .from('pdfs')
-                .select('id, title, slug, visibility, view_count, created_at, size_bytes')
-                .eq('user_id', u.id)
-                .order('created_at', { ascending: false })
-                .limit(10);
+            const [pdfRes, profileRes, qrRes] = await Promise.all([
+                supabase
+                    .from('pdfs')
+                    .select('id, title, slug, visibility, view_count, created_at, size_bytes')
+                    .eq('user_id', u.id)
+                    .order('created_at', { ascending: false })
+                    .limit(10),
+                supabase
+                    .from('profiles')
+                    .select('is_pro')
+                    .eq('id', u.id)
+                    .single(),
+                supabase
+                    .from('qr_codes')
+                    .select('*')
+                    .eq('user_id', u.id)
+                    .order('created_at', { ascending: false })
+                    .limit(5)
+            ]);
 
-            const list = pdfData ?? [];
+            setIsPro(profileRes.data?.is_pro ?? false);
+            const list = pdfRes.data ?? [];
             setPdfs(list);
+            setQrs(qrRes.data ?? []);
             setStats({
                 totalPdfs: list.length,
                 totalViews: list.reduce((sum, p) => sum + (p.view_count || 0), 0),
@@ -64,14 +81,22 @@ export default function DashboardPage() {
         load();
     }, []);
 
+    const deleteQr = async (id: string) => {
+        if (!confirm('Delete this saved QR code?')) return;
+        setQrs(qrs.filter(q => q.id !== id));
+        await supabase.from('qr_codes').delete().eq('id', id);
+    };
+
+    const storageLimitMB = isPro ? 10240 : 100;
+    const storageLimitLabel = isPro ? '10 GB' : '100 MB';
     const storageMB = (stats.storageUsed / 1024 / 1024).toFixed(1);
-    const storagePct = Math.min((stats.storageUsed / 1024 / 1024 / 100) * 100, 100);
+    const storagePct = Math.min((stats.storageUsed / 1024 / 1024 / storageLimitMB) * 100, 100);
 
     const statCards = [
         { icon: <FileText size={18} />, label: 'Total PDFs', value: stats.totalPdfs, color: '#2563eb', sub: `${Math.max(0, pdfs.filter(p => { const d = Date.now() - new Date(p.created_at).getTime(); return d < 7 * 24 * 3600000; }).length)} this week` },
         { icon: <QrCode size={18} />, label: 'QR Codes', value: stats.totalPdfs, color: '#3b82f6', sub: 'One per PDF' },
         { icon: <Eye size={18} />, label: 'Total Views', value: stats.totalViews, color: '#3b82f6', sub: 'All time' },
-        { icon: <HardDrive size={18} />, label: 'Storage Used', value: `${storageMB} MB`, color: '#ec4899', sub: 'of 100 MB free' },
+        { icon: <HardDrive size={18} />, label: 'Storage Used', value: `${storageMB} MB`, color: '#ec4899', sub: `of ${storageLimitLabel} ${isPro ? 'used' : 'free'}` },
     ];
 
     if (loading) return (
@@ -114,49 +139,98 @@ export default function DashboardPage() {
                     ))}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
-                    {/* Recent PDFs */}
-                    <div className="glass-card" style={{ overflow: 'hidden' }}>
-                        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 style={{ fontWeight: 700, fontSize: 16 }}>Recent PDFs</h2>
-                            <Link href="/my-pdfs" style={{ fontSize: 13, color: '#93c5fd', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
-                        </div>
-
-                        {pdfs.length === 0 ? (
-                            <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-                                <FileText size={40} style={{ color: 'var(--text-faint)', margin: '0 auto 16px' }} />
-                                <p style={{ fontWeight: 600, marginBottom: 8 }}>No PDFs yet</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 20 }}>Upload your first PDF to get a shareable link and QR code.</p>
-                                <Link href="/upload" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 22px', borderRadius: 9, background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: 14 }}>
-                                    <Upload size={14} /> Upload your first PDF
-                                </Link>
+                <div className="dash-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
+                    {/* Main Content Column */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {/* Recent PDFs */}
+                        <div className="glass-card" style={{ overflow: 'hidden' }}>
+                            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h2 style={{ fontWeight: 700, fontSize: 16 }}>Recent PDFs</h2>
+                                <Link href="/my-pdfs" style={{ fontSize: 13, color: '#93c5fd', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
                             </div>
-                        ) : (
-                            pdfs.slice(0, 8).map(pdf => (
-                                <div key={pdf.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
-                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
-                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                >
-                                    <div style={{ width: 38, height: 44, borderRadius: 8, background: 'rgba(37,99,235,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <FileText size={18} style={{ color: '#93c5fd' }} />
-                                    </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pdf.title}</p>
-                                        <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Eye size={10} /> {pdf.view_count}</span>
-                                            <span>{formatBytes(pdf.size_bytes)}</span>
-                                            <span>{timeAgo(pdf.created_at)}</span>
+
+                            {pdfs.length === 0 ? (
+                                <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+                                    <FileText size={40} style={{ color: 'var(--text-faint)', margin: '0 auto 16px' }} />
+                                    <p style={{ fontWeight: 600, marginBottom: 8 }}>No PDFs yet</p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 20 }}>Upload your first PDF to get a shareable link and QR code.</p>
+                                    <Link href="/upload" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 22px', borderRadius: 9, background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: 14 }}>
+                                        <Upload size={14} /> Upload your first PDF
+                                    </Link>
+                                </div>
+                            ) : (
+                                pdfs.slice(0, 8).map(pdf => (
+                                    <div key={pdf.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                    >
+                                        <div style={{ width: 38, height: 44, borderRadius: 8, background: 'rgba(37,99,235,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <FileText size={18} style={{ color: '#93c5fd' }} />
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pdf.title}</p>
+                                            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Eye size={10} /> {pdf.view_count}</span>
+                                                <span>{formatBytes(pdf.size_bytes)}</span>
+                                                <span>{timeAgo(pdf.created_at)}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: pdf.visibility === 'public' ? 'rgba(34,197,94,0.1)' : 'rgba(37,99,235,0.1)', color: pdf.visibility === 'public' ? '#4ade80' : '#93c5fd' }}>
+                                                {pdf.visibility === 'public' ? 'Public' : 'Private'}
+                                            </span>
+                                            <Link href={`/p/${pdf.slug}`} target="_blank" style={{ fontSize: 12, color: '#93c5fd', textDecoration: 'none' }}>View →</Link>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: pdf.visibility === 'public' ? 'rgba(34,197,94,0.1)' : 'rgba(37,99,235,0.1)', color: pdf.visibility === 'public' ? '#4ade80' : '#93c5fd' }}>
-                                            {pdf.visibility === 'public' ? 'Public' : 'Private'}
-                                        </span>
-                                        <Link href={`/p/${pdf.slug}`} target="_blank" style={{ fontSize: 12, color: '#93c5fd', textDecoration: 'none' }}>View →</Link>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Saved QR Codes */}
+                        <div className="glass-card" style={{ overflow: 'hidden' }}>
+                            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h2 style={{ fontWeight: 700, fontSize: 16 }}>Saved QR Codes</h2>
+                                <Link href="/qr-generator" style={{ fontSize: 13, color: '#93c5fd', textDecoration: 'none', fontWeight: 600 }}>Create new →</Link>
+                            </div>
+
+                            {qrs.length === 0 ? (
+                                <div style={{ padding: '32px 24px', textAlign: 'center' }}>
+                                    <div style={{ width: 40, height: 40, margin: '0 auto 12px', background: 'rgba(59,130,246,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <QrCode size={20} style={{ color: '#3b82f6' }} />
                                     </div>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>No saved QR codes found.</p>
                                 </div>
-                            ))
-                        )}
+                            ) : (
+                                qrs.map(qr => (
+                                    <div key={qr.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                    >
+                                        <div style={{ width: 38, height: 44, borderRadius: 8, background: 'rgba(59,130,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <QrCode size={18} style={{ color: '#3b82f6' }} />
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{qr.config?.name || qr.data}</p>
+                                            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+                                                <span>{timeAgo(qr.created_at)}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(139,92,246,0.1)', color: '#8b5cf6', textTransform: 'capitalize' }}>
+                                                {qr.type.replace('_', ' ')}
+                                            </span>
+                                            <button onClick={() => {
+                                                navigator.clipboard.writeText(qr.data);
+                                                alert('Copied QR data to clipboard!');
+                                            }} style={{ fontSize: 12, color: '#93c5fd', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>Copy Data →</button>
+                                            <button onClick={() => deleteQr(qr.id)} style={{ color: 'var(--text-faint)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex' }} title="Delete">
+                                                <Trash2 size={13} style={{ color: '#ef4444' }} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
 
                     {/* Sidebar */}
@@ -183,14 +257,20 @@ export default function DashboardPage() {
                         {/* Storage */}
                         <div className="glass-card" style={{ padding: 20 }}>
                             <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Storage</h3>
-                            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{storageMB} MB of 100 MB used</p>
+                            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>{storageMB} MB of {storageLimitLabel} used</p>
                             <div style={{ height: 6, borderRadius: 99, background: 'var(--border)', overflow: 'hidden', marginBottom: 14 }}>
                                 <div style={{ height: '100%', width: `${storagePct}%`, background: storagePct > 80 ? '#f59e0b' : 'linear-gradient(90deg, #2563eb, #3b82f6)', borderRadius: 99, transition: 'width 0.8s ease' }} />
                             </div>
                             {storagePct > 80 && <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12 }}>⚠️ Storage almost full</p>}
-                            <Link href="/pricing" style={{ display: 'block', textAlign: 'center', padding: '10px', borderRadius: 9, background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>
-                                Upgrade to Pro ↗
-                            </Link>
+                            {isPro ? (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', borderRadius: 9, background: '#fef3c7', color: '#854d0e', fontWeight: 700, fontSize: 13 }}>
+                                    ⚡ Pro Plan Active
+                                </div>
+                            ) : (
+                                <Link href="/pricing" style={{ display: 'block', textAlign: 'center', padding: '10px', borderRadius: 9, background: 'linear-gradient(135deg, #1d4ed8, #2563eb)', color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>
+                                    Upgrade to Pro ↗
+                                </Link>
+                            )}
                         </div>
                     </div>
                 </div>
