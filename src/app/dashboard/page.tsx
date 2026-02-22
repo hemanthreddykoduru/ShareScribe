@@ -15,6 +15,16 @@ type Pdf = {
     size_bytes: number;
 };
 
+type QrCodeItem = {
+    id: string;
+    type: string;
+    data: string;
+    created_at: string;
+    config?: {
+        name?: string;
+    };
+};
+
 function timeAgo(date: string) {
     const diff = Date.now() - new Date(date).getTime();
     const min = Math.floor(diff / 60000);
@@ -32,7 +42,7 @@ function formatBytes(bytes: number) {
 export default function DashboardPage() {
     const [user, setUser] = useState<User | null>(null);
     const [pdfs, setPdfs] = useState<Pdf[]>([]);
-    const [qrs, setQrs] = useState<any[]>([]);
+    const [qrs, setQrs] = useState<QrCodeItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [isPro, setIsPro] = useState(false);
     const [stats, setStats] = useState({ totalPdfs: 0, totalViews: 0, storageUsed: 0 });

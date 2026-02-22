@@ -47,19 +47,6 @@ export default function QrGeneratorPage() {
         link.click();
     };
 
-    const shareQR = async () => {
-        const canvas = qrContainerRef.current?.querySelector('canvas') as HTMLCanvasElement;
-        if (!canvas) return;
-        canvas.toBlob(async (blob) => {
-            if (!blob) return;
-            try {
-                await navigator.share({ files: [new File([blob], 'qr.png', { type: 'image/png' })] });
-            } catch {
-                // Fallback: just download
-                downloadQR();
-            }
-        });
-    };
 
     return (
         <div style={{ paddingTop: 88, minHeight: '100vh' }}>
