@@ -28,14 +28,25 @@ export default function Navbar() {
     const [scrolled, setScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [user, setUser] = useState<User | null>(null);
+    const [isPro, setIsPro] = useState(false);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Get auth state
     useEffect(() => {
-        supabase.auth.getUser().then(({ data }) => setUser(data.user));
+        supabase.auth.getUser().then(({ data }) => {
+            setUser(data.user);
+            if (data.user) {
+                supabase.from('profiles').select('is_pro').eq('id', data.user.id).single()
+                    .then(({ data: p }) => setIsPro(p?.is_pro ?? false));
+            }
+        });
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setUser(session?.user ?? null);
+            if (session?.user) {
+                supabase.from('profiles').select('is_pro').eq('id', session.user.id).single()
+                    .then(({ data: p }) => setIsPro(p?.is_pro ?? false));
+            }
         });
         return () => subscription.unsubscribe();
     }, []);
@@ -151,8 +162,13 @@ export default function Navbar() {
                                     <div style={{ padding: '10px 14px 14px', borderBottom: '1px solid #dbeafe', marginBottom: 6 }}>
                                         <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 3, color: '#0f172a' }}>{user.user_metadata?.full_name ?? 'User'}</p>
                                         <p style={{ fontSize: 12, color: '#4a7ca5', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</p>
-                                        <span style={{ display: 'inline-block', marginTop: 8, fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#dbeafe', padding: '3px 8px', borderRadius: 99 }}>
-                                            Free Plan
+                                        <span style={{
+                                            display: 'inline-block', marginTop: 8, fontSize: 11, fontWeight: 700,
+                                            color: isPro ? '#854d0e' : '#2563eb',
+                                            background: isPro ? '#fef3c7' : '#dbeafe',
+                                            padding: '3px 8px', borderRadius: 99
+                                        }}>
+                                            {isPro ? '⚡ Pro' : 'Free Plan'}
                                         </span>
                                     </div>
 

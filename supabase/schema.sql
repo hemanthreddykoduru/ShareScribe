@@ -8,13 +8,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- PROFILES (extends Supabase auth.users)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id              UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name       TEXT,
-  avatar_url      TEXT,
-  plan            TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
-  storage_used    BIGINT NOT NULL DEFAULT 0,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                   UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name            TEXT,
+  avatar_url           TEXT,
+  plan                 TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
+  is_pro               BOOLEAN NOT NULL DEFAULT FALSE,
+  razorpay_payment_id  TEXT,
+  storage_used         BIGINT NOT NULL DEFAULT 0,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
